@@ -84,8 +84,9 @@ static const unsigned char PROGMEM logo_bmp[] =
   };
 
 
-float targetTemperature = 20.00; 
-
+float targetTemperature = 40.00; 
+boolean heatingPreviousState = false;
+boolean heatingCurrentState = false;
 
 void showText(String text, int textSize, int x, int y) {
   display.setTextSize(textSize); // Draw 2X-scale text
@@ -103,7 +104,7 @@ void showSplashScreen(void) {
 void setup()
 {
   pinMode(SSR, OUTPUT);
-  Serial.begin(115200);
+  Serial.begin(9600);
     // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
     Serial.println(F("SSD1306 allocation failed"));
@@ -111,32 +112,49 @@ void setup()
   }
 
   showSplashScreen();
-  delay(4000);
+  delay(2000);
 }
 
 void showTemperature(float target, float current) {
-  display.clearDisplay();
+
   showText("Control",2, 22, 0); 
   display.drawRect(0, 16, 120, 20, WHITE);
   showText("Target: " + String(target) + " C",1, 4, 22);
   display.drawRect(0, 43, 120, 20, WHITE); 
   showText("Current: " + String(current) + " C",1, 4, 50);
-  display.display();
+  
+}
+
+void showHeatingStatus(bool heating) {
+  Serial.println("Heating: " + String(heating));
+  heatingCurrentState = heating;
+
+  if (!(heatingPreviousState == heatingCurrentState) && (heating == true)){
+        heatingCurrentState = true;
+        display.fillCircle(10, 6, 3, WHITE);
+  } 
 }
 
 void loop()
 {
     float currentTemperature = read_termocouple();
+    display.clearDisplay();
+    Serial.println("\n------------------------------------------");
     Serial.println("Current temperature: " + String(currentTemperature, 2));
     showTemperature(targetTemperature, currentTemperature);
     if (currentTemperature <= targetTemperature) {
       Serial.println("Heating up to " + String(targetTemperature) + " C");
+      showHeatingStatus(true);
       digitalWrite(SSR, HIGH); 
+      
     }
     else if (currentTemperature >= targetTemperature){
       Serial.println("Reached " + String(targetTemperature) + " C");
+      showHeatingStatus(false);
       digitalWrite(SSR, LOW); 
     }
+    Serial.println("------------------------------------------");
+    display.display();
     delay(300);
 }
 
