@@ -3,7 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#define SSR 6
+#define SSR 11
 #define MAX6675_SO 2   //purple
 #define MAX6675_CS 3   //green
 #define MAX6675_SCK 4  //white
@@ -84,7 +84,7 @@ static const unsigned char PROGMEM logo_bmp[] =
   };
 
 
-float targetTemperature = 40.00; 
+float targetTemperature = 50.00; 
 boolean heatingPreviousState = false;
 boolean heatingCurrentState = false;
 
@@ -110,7 +110,7 @@ void setup()
     Serial.println(F("SSD1306 allocation failed"));
     for(;;); // Don't proceed, loop forever
   }
-
+  TCCR2B = TCCR2B & B11111000 | B00000111;    // D11 PWM is now 30.64 Hz
   showSplashScreen();
   delay(2000);
 }
@@ -145,7 +145,9 @@ void loop()
     if (currentTemperature <= targetTemperature) {
       Serial.println("Heating up to " + String(targetTemperature) + " C");
       showHeatingStatus(true);
-      digitalWrite(SSR, HIGH); 
+      //Write PWM signal to the SSR
+      analogWrite(SSR, 10); //TODO use PID to calculate this (0-255 value).
+      //digitalWrite(SSR, HIGH); 
       
     }
     else if (currentTemperature >= targetTemperature){
