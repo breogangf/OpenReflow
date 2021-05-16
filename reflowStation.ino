@@ -84,14 +84,23 @@ static const unsigned char PROGMEM logo_bmp[] = {
 };
 
 double currentTemperature;
-double targetTemperature = 40.00;
+double targetTemperature = 150.00;
+double gapTrigger = 20.00;
 double PWM_Output;
 boolean heatingPreviousState = false;
 boolean heatingCurrentState = false;
 
 //Define the aggressive and conservative PID Tuning Parameters
-double aggKp=4, aggKi=0.2, aggKd=1;
-double consKp=1, consKi=0.05, consKd=0.25;
+
+//////////////////////////////////////////////
+
+double aggKp=0.8, aggKi=0.00, aggKd=0.00;       
+                                            
+double consKp=0.3, consKi=0.02, consKd=0.1;
+
+//////////////////////////////////////////////
+
+
 PID myPID(&currentTemperature, &PWM_Output, &targetTemperature, consKp, consKi, consKd, DIRECT);
 
 void showText(String text, int textSize, int x, int y) {
@@ -99,7 +108,7 @@ void showText(String text, int textSize, int x, int y) {
   display.setTextColor(WHITE);
   display.setCursor(x, y);
   display.println(text);
-}
+} 
 
 void showSplashScreen(void) {
   display.clearDisplay();
@@ -146,7 +155,7 @@ void loop() {
   currentTemperature = read_termocouple();
   double gap = abs(targetTemperature-currentTemperature); //distance away from setpoint
 
-  if (gap < 20) {  //we're close to target temperature, use conservative tuning parameters
+  if (gap < gapTrigger) {  //we're close to target temperature, use conservative tuning parameters
     myPID.SetTunings(consKp, consKi, consKd);
   }
   else { //we're far from target temperature, use aggressive tuning parameters
