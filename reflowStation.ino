@@ -5,9 +5,9 @@
 #include <Adafruit_SSD1306.h>
 
 #define SSR 11
-#define MAX6675_SO 2   //purple
-#define MAX6675_CS 3   //green
-#define MAX6675_SCK 4  //white
+#define MAX6675_SO 2
+#define MAX6675_CS 3
+#define MAX6675_SCK 4
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -83,13 +83,19 @@ static const unsigned char PROGMEM logo_bmp[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-
-float targetTemperature = 30.00;
+double currentTemperature;
+double targetTemperature = 40.00;
+double PWM_Output;
 boolean heatingPreviousState = false;
 boolean heatingCurrentState = false;
 
+//Define the aggressive and conservative PID Tuning Parameters
+double aggKp=4, aggKi=0.2, aggKd=1;
+double consKp=1, consKi=0.05, consKd=0.25;
+PID myPID(&currentTemperature, &PWM_Output, &targetTemperature, consKp, consKi, consKd, DIRECT);
+
 void showText(String text, int textSize, int x, int y) {
-  display.setTextSize(textSize); // Draw 2X-scale text
+  display.setTextSize(textSize);
   display.setTextColor(WHITE);
   display.setCursor(x, y);
   display.println(text);
@@ -102,6 +108,9 @@ void showSplashScreen(void) {
 }
 
 void setup() {
+  pinMode(MAX6675_CS, OUTPUT);
+  pinMode(MAX6675_SO, INPUT);
+  pinMode(MAX6675_SCK, OUTPUT);
   pinMode(SSR, OUTPUT);
   Serial.begin(9600);
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
@@ -112,6 +121,7 @@ void setup() {
   TCCR2B = TCCR2B & B11111000 | B00000111;    // D11 PWM is now 30.64 Hz
   showSplashScreen();
   delay(2000);
+  myPID.SetMode(AUTOMATIC); //turn the PID on
 }
 
 void showTemperature(float target, float current) {
@@ -133,7 +143,17 @@ void showHeatingStatus(bool heating) {
 }
 
 void loop() {
-  float currentTemperature = read_termocouple();
+  currentTemperature = read_termocouple();
+  double gap = abs(targetTemperature-currentTemperature); //distance away from setpoint
+
+  if (gap < 20) {  //we're close to target temperature, use conservative tuning parameters
+    myPID.SetTunings(consKp, consKi, consKd);
+  }
+  else { //we're far from target temperature, use aggressive tuning parameters
+     myPID.SetTunings(aggKp, aggKi, aggKd);
+  }
+  myPID.Compute();
+  analogWrite(SSR, PWM_Output); 
   display.clearDisplay();
   Serial.println("\n------------------------------------------");
   Serial.println("Current temperature: " + String(currentTemperature, 2));
@@ -141,35 +161,22 @@ void loop() {
   if (currentTemperature <= targetTemperature) {
     Serial.println("Heating up to " + String(targetTemperature) + " C");
     showHeatingStatus(true);
-    //Write PWM signal to the SSR
-    analogWrite(SSR, 10); //TODO use PID to calculate this (0-255 value).
-    //digitalWrite(SSR, HIGH);
-
   }
   else if (currentTemperature >= targetTemperature) {
     Serial.println("Reached " + String(targetTemperature) + " C");
     showHeatingStatus(false);
-    digitalWrite(SSR, LOW);
   }
+  Serial.println("PWM_Output: " + String(PWM_Output));
+  Serial.println("PID: (" + String(myPID.GetKp()) + ")" + " " + "(" + String(myPID.GetKi()) + ")" + " " + "(" + String(myPID.GetKd()) + ")");
   Serial.println("------------------------------------------");
   display.display();
-  delay(300);
+  delay(200);
 }
 
 double read_termocouple() {
   uint16_t v;
-  pinMode(MAX6675_CS, OUTPUT);
-  pinMode(MAX6675_SO, INPUT);
-  pinMode(MAX6675_SCK, OUTPUT);
-
   digitalWrite(MAX6675_CS, LOW);
   delay(1);
-
-  // Read in 16 bits,
-  //  15    = 0 always
-  //  14..2 = 0.25 degree counts MSB First
-  //  2     = 1 if thermocouple is open circuit
-  //  1..0  = uninteresting status
 
   v = shiftIn(MAX6675_SO, MAX6675_SCK, MSBFIRST);
   v <<= 8;
@@ -178,13 +185,8 @@ double read_termocouple() {
   digitalWrite(MAX6675_CS, HIGH);
   if (v & 0x4)
   {
-    // Bit 2 indicates if the thermocouple is disconnected
     return NAN;
   }
-
-  // The lower three bits (0,1,2) are discarded status bits
   v >>= 3;
-
-  // The remaining bits are the number of 0.25 degree (C) counts
   return v * 0.25;
 }
