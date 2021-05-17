@@ -3,18 +3,25 @@
 #include <PID_v1.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <RotaryEncoder.h>
 
-#define SSR 11
-#define MAX6675_SO 2
-#define MAX6675_CS 3
-#define MAX6675_SCK 4
+//Solid State Relay
+#define SSR 11 
 
+//Oled Display
+#define MAX6675_SO 7 
+#define MAX6675_CS 8
+#define MAX6675_SCK 9
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 
+//Rotary Encoder
+#define PIN_IN1 2
+#define PIN_IN2 3
+
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 #define OLED_RESET -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET); 
 
 static const unsigned char PROGMEM logo_bmp[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -84,7 +91,7 @@ static const unsigned char PROGMEM logo_bmp[] = {
 };
 
 double currentTemperature;
-double targetTemperature = 150.00;
+double targetTemperature = 235.00;
 double gapTrigger = 20.00;
 double PWM_Output;
 boolean heatingPreviousState = false;
@@ -94,14 +101,20 @@ boolean heatingCurrentState = false;
 
 //////////////////////////////////////////////
 
-double aggKp=0.8, aggKi=0.00, aggKd=0.00;       
+double aggKp=15, aggKi=0.00, aggKd=0.00;       
                                             
-double consKp=0.3, consKi=0.02, consKd=0.1;
+double consKp=15, consKi=0.02, consKd=0.1;
 
 //////////////////////////////////////////////
 
 
 PID myPID(&currentTemperature, &PWM_Output, &targetTemperature, consKp, consKi, consKd, DIRECT);
+RotaryEncoder encoder(PIN_IN1, PIN_IN2, RotaryEncoder::LatchMode::TWO03);
+
+ void checkPosition()
+ {
+   encoder.tick(); // just call tick() to check the state.
+ }
 
 void showText(String text, int textSize, int x, int y) {
   display.setTextSize(textSize);
@@ -131,6 +144,10 @@ void setup() {
   showSplashScreen();
   delay(2000);
   myPID.SetMode(AUTOMATIC); //turn the PID on
+
+  attachInterrupt(digitalPinToInterrupt(PIN_IN1), checkPosition, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(PIN_IN2), checkPosition, CHANGE);
+  encoder.setPosition((long) targetTemperature);
 }
 
 void showTemperature(float target, float current) {
@@ -142,9 +159,7 @@ void showTemperature(float target, float current) {
 }
 
 void showHeatingStatus(bool heating) {
-  Serial.println("Heating: " + String(heating));
   heatingCurrentState = heating;
-
   if (!(heatingPreviousState == heatingCurrentState) && (heating == true)) {
     heatingCurrentState = true;
     display.fillCircle(10, 6, 3, WHITE);
@@ -152,6 +167,13 @@ void showHeatingStatus(bool heating) {
 }
 
 void loop() {
+
+  encoder.tick();
+  long newTemperature = encoder.getPosition();
+  if ((int) targetTemperature != (int) newTemperature) {
+    targetTemperature = (double) newTemperature;
+  }
+
   currentTemperature = read_termocouple();
   double gap = abs(targetTemperature-currentTemperature); //distance away from setpoint
 
@@ -164,20 +186,22 @@ void loop() {
   myPID.Compute();
   analogWrite(SSR, PWM_Output); 
   display.clearDisplay();
-  Serial.println("\n------------------------------------------");
-  Serial.println("Current temperature: " + String(currentTemperature, 2));
+ 
   showTemperature(targetTemperature, currentTemperature);
   if (currentTemperature <= targetTemperature) {
-    Serial.println("Heating up to " + String(targetTemperature) + " C");
     showHeatingStatus(true);
   }
   else if (currentTemperature >= targetTemperature) {
-    Serial.println("Reached " + String(targetTemperature) + " C");
     showHeatingStatus(false);
   }
+
+  Serial.println("\n------------------------------------------");
+  Serial.println("Current: " + String(currentTemperature, 2));
+  Serial.println("Target: " + String(targetTemperature));
   Serial.println("PWM_Output: " + String(PWM_Output));
   Serial.println("PID: (" + String(myPID.GetKp()) + ")" + " " + "(" + String(myPID.GetKi()) + ")" + " " + "(" + String(myPID.GetKd()) + ")");
   Serial.println("------------------------------------------");
+
   display.display();
   delay(200);
 }
